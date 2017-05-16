@@ -1,4 +1,4 @@
-{
+﻿{
   "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
@@ -9,30 +9,31 @@
         "description": "User name for the CSR(s)."
       }
     },
-    "adminPassword": {
+    "sshPublicKey": {
       "type": "securestring",
+      "defaultValue": "ssh-rsa AAAAB3NzaC1yc2EAAAABJQAAAQEAo8gj83eF5EByTrwoSHwEzN6IOrw7gLQbcnWGfsk66AQKh6TfttjpemlVN6O7DEGyBwai6HvkgVHrnmfhkr53aL85J2hcvHKKfyHTanwcnYbP+LYQAhrLJCWIGtOLGNq5j0T8Q8d82l2+H9Q2F1qyZqTI/6peMWmYwnhVZRwcia6HWxyMUbWR4bkcVGDiJmniejBmqbvb+VIXcDTivgnnYo7cgRMbuppw/qgSmSkZlR6t85tLFUfge3tCFjXrOdkm8WPiQk+U6nqR6sGYnweoOCauSr5vjVkYita9Wa+Hm0Qh7MaviDMKnTDMMP6/64ZMEh4zN/LCLCXXFg9S0VpdLQ== rsa-key-20170411",
       "metadata": {
         "description": "Password for the CSR(s)."
       }
     },
-    "csrNamePrefix": {
+    "csrName": {
       "type": "string",
       "defaultValue": "CSR",
-      "maxLength": 11,
+      "maxLength": 15,
       "metadata": {
-        "Description": "This value will be utilized to name resources during deployment.  Must be 11 or less characters."
+        "Description": "This value will be utilized to name resources during deployment and will be the name of the CSR.  Must be 11 or less characters."
       }
     },
     "csrSize": {
       "type": "string",
       "defaultValue": "Standard_D2_v2",
       "allowedValues": [
-        "Standard_D1_v2",
         "Standard_D2_v2",
-        "Standard_D3_v2"
+        "Standard_D3_v2",
+        "Standard_D4_v2"
       ],
       "metadata": {
-        "Description": "The size of the CSR to deploy. D1: 1 core, 3.5GB.  D2: 2 cores, 7GB.  D3: 4 cores, 14GB"
+        "Description": "The size of the CSR to deploy. D2: 2 core, 7GB.  D3: 4 cores, 14GB.  D3: 8 cores, 28GB"
       }
     },
     "virtualNetworkResourceGroupName": {
@@ -63,13 +64,6 @@
         "description": "The IP Address of the first NIC in the first CSR.  Should be from the range covered by 'subnet1Name'. Example:  10.1.1.100"
       }
     },
-    "csr2NIC1IPAddress": {
-      "type": "string",
-      "defaultValue": "<ipaddress>",
-      "metadata": {
-        "description": "The IP Address of the first NIC in the second CSR.  Should be from the range covered by 'subnet1Name'. Example:  10.1.1.101"
-      }
-    },
     "subnet2Name": {
       "type": "string",
       "defaultValue": "<replacewithyoursecondsubnetname>",
@@ -84,11 +78,11 @@
         "description": "The IP Address of the second NIC in the second CSR.  Should be from the range covered by 'subnet2Name'. Example:  10.2.1.100"
       }
     },
-    "csr2NIC2IPAddress": {
+    "availabilitySetName": {
       "type": "string",
-      "defaultValue": "<ipaddress>",
+      "defaultValue": "<replacewithyourAVSetName>",
       "metadata": {
-        "description": "The IP Address of the second NIC in the second CSR.  Should be from the range covered by 'subnet2Name'. Example:  10.2.1.101"
+        "description": "The availability set to which you would like this CSR added. Example:  csravset1"
       }
     }
   },
@@ -99,22 +93,19 @@
     "imageSKU": "csr-azure-byol",
     "vhdStorageType": "Standard_LRS",
     "vhdStorageContainerName": "vhds",
+    "sshKeyPath": "[concat('/home/',parameters('adminUsername'),'/.ssh/authorized_keys')]",
     "subnet1ResourceId": "[resourceId(parameters('virtualNetworkResourceGroupName'), 'Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworkName'), parameters('Subnet1Name'))]",
     "subnet2ResourceId": "[resourceId(parameters('virtualNetworkResourceGroupName'), 'Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworkName'), parameters('Subnet2Name'))]",
-    "vhdStorageAccountName": "[concat('vhdstor', uniqueString(resourceGroup().id))]"
+    "avsetResourceID": "[resourceId(resourceGroup().name, 'Microsoft.Compute/availabilitySets', parameters('availabilitySetName'))]"
   },
   "resources": [
     {
       "type": "Microsoft.Storage/storageAccounts",
-      "name": "[uniqueString(concat(copyindex(),resourceGroup().id))]",
+      "name": "[uniqueString(resourceGroup().id, deployment().name)]",
       "apiVersion": "2016-01-01",
       "location": "[resourceGroup().location]",
-      "copy": {
-        "name": "sacopy",
-        "count": "[variables('numInstances')]"
-      },
       "tags": {
-        "displayName": "StorageAccount"
+        "displayName": "[parameters('csrName')]"
       },
       "sku": {
         "name": "[variables('vhdStorageType')]"
@@ -124,7 +115,7 @@
     {
       "apiVersion": "2016-03-30",
       "type": "Microsoft.Network/networkInterfaces",
-      "name": "[concat(parameters('csrNamePrefix'), '0', 'nic0')]",
+      "name": "[concat(parameters('csrName'),'nic0')]",
       "location": "[resourceGroup().location]",
       "tags": {
         "displayName": "NetworkInterface"
@@ -148,31 +139,7 @@
     {
       "apiVersion": "2016-03-30",
       "type": "Microsoft.Network/networkInterfaces",
-      "name": "[concat(parameters('csrNamePrefix'), '1', 'nic0')]",
-      "location": "[resourceGroup().location]",
-      "tags": {
-        "displayName": "NetworkInterface"
-      },
-      "properties": {
-        "ipConfigurations": [
-          {
-            "name": "ipconfig1",
-            "properties": {
-              "privateIPAllocationMethod": "Static",
-              "privateIPAddress": "[parameters('csr2NIC1IPAddress')]",
-              "subnet": {
-                "id": "[variables('subnet1ResourceId')]"
-              }
-            }
-          }
-        ],
-        "enableIPForwarding": true
-      }
-    },
-    {
-      "apiVersion": "2016-03-30",
-      "type": "Microsoft.Network/networkInterfaces",
-      "name": "[concat(parameters('csrNamePrefix'), '0', 'nic1')]",
+      "name": "[concat(parameters('csrName'),'nic1')]",
       "location": "[resourceGroup().location]",
       "tags": {
         "displayName": "NetworkInterface"
@@ -194,91 +161,9 @@
       }
     },
     {
-      "apiVersion": "2016-03-30",
-      "type": "Microsoft.Network/networkInterfaces",
-      "name": "[concat(parameters('csrNamePrefix'), '1', 'nic1')]",
-      "location": "[resourceGroup().location]",
-      "tags": {
-        "displayName": "NetworkInterface"
-      },
-      "properties": {
-        "ipConfigurations": [
-          {
-            "name": "ipconfig1",
-            "properties": {
-              "privateIPAllocationMethod": "Static",
-              "privateIPAddress": "[parameters('csr2NIC2IPAddress')]",
-              "subnet": {
-                "id": "[variables('subnet2ResourceId')]"
-              }
-            }
-          }
-        ],
-        "enableIPForwarding": true
-      }
-    },
-    {
       "apiVersion": "2015-06-15",
       "type": "Microsoft.Compute/virtualMachines",
-      "name": "[concat(parameters('csrNamePrefix'), '0')]",
-      "location": "[resourceGroup().location]",
-      "plan": {
-        "name": "csr-azure-byol",
-        "publisher": "cisco",
-        "product": "cisco-csr-1000v"
-      },
-        "dependsOn": [
-          "[resourceId('Microsoft.Storage/storageAccounts', uniqueString(concat('0',resourceGroup().id)))]",
-          "[resourceId('Microsoft.Network/networkInterfaces', concat(parameters('csrNamePrefix'), '0nic0'))]",
-          "[resourceId('Microsoft.Network/networkInterfaces', concat(parameters('csrNamePrefix'), '0nic1'))]",
-          "[resourceId('Microsoft.Compute/availabilitySets', concat(parameters('csrNamePrefix'), 'avset'))]"
-        ],
-        "properties": {
-          "hardwareProfile": {
-            "vmSize": "[parameters('csrSize')]"
-          },
-          "osProfile": {
-            "computerName": "[concat(parameters('csrNamePrefix'), '0')]",
-            "adminUsername": "[parameters('adminUsername')]",
-            "adminPassword": "[parameters('adminPassword')]"
-          },
-          "storageProfile": {
-            "imageReference": {
-              "publisher": "[variables('imagePublisher')]",
-              "offer": "[variables('imageOffer')]",
-              "sku": "[variables('imageSKU')]",
-              "version": "latest"
-            },
-            "osDisk": {
-              "name": "osdisk",
-              "vhd": {
-                "uri": "[concat(reference(resourceId('Microsoft.Storage/storageAccounts', uniqueString(concat('0',resourceGroup().id))), '2016-01-01').primaryEndpoints.blob, variables('vhdStorageContainerName'), '/', parameters('csrNamePrefix'),'0', '.vhd')]"
-              },
-              "caching": "ReadWrite",
-              "createOption": "FromImage"
-            }
-          },
-          "networkProfile": {
-            "networkInterfaces": [
-              {
-                "id": "[resourceId('Microsoft.Network/networkInterfaces', concat(parameters('csrNamePrefix'), '0nic0'))]",
-                "properties": { "primary": true }
-              },
-              {
-                "id": "[resourceId('Microsoft.Network/networkInterfaces', concat(parameters('csrNamePrefix'), '0nic1'))]",
-                "properties": { "primary": false }
-              }
-            ]
-          }
-        },
-        "resources": [
-
-        ]
-      },
-    {
-      "apiVersion": "2015-06-15",
-      "type": "Microsoft.Compute/virtualMachines",
-      "name": "[concat(parameters('csrNamePrefix'), '1')]",
+      "name": "[parameters('csrName')]",
       "location": "[resourceGroup().location]",
       "plan": {
         "name": "csr-azure-byol",
@@ -286,19 +171,31 @@
         "product": "cisco-csr-1000v"
       },
       "dependsOn": [
-        "[resourceId('Microsoft.Storage/storageAccounts', uniqueString(concat('1',resourceGroup().id)))]",
-        "[resourceId('Microsoft.Network/networkInterfaces', concat(parameters('csrNamePrefix'), '1nic0'))]",
-        "[resourceId('Microsoft.Network/networkInterfaces', concat(parameters('csrNamePrefix'), '1nic1'))]",
-        "[resourceId('Microsoft.Compute/availabilitySets', concat(parameters('csrNamePrefix'), 'avset'))]"
+        "[resourceId('Microsoft.Storage/storageAccounts', uniqueString(resourceGroup().id, deployment().name))]",
+        "[resourceId('Microsoft.Network/networkInterfaces', concat(parameters('csrName'), 'nic0'))]",
+        "[resourceId('Microsoft.Network/networkInterfaces', concat(parameters('csrName'), 'nic1'))]"
       ],
       "properties": {
         "hardwareProfile": {
           "vmSize": "[parameters('csrSize')]"
         },
         "osProfile": {
-          "computerName": "[concat(parameters('csrNamePrefix'), '1')]",
+          "computername": "[parameters('csrName')]",
           "adminUsername": "[parameters('adminUsername')]",
-          "adminPassword": "[parameters('adminPassword')]"
+          "linuxConfiguration": {
+            "disablePasswordAuthentication": true,
+            "ssh": {
+              "publicKeys": [
+                {
+                  "path": "[variables('sshKeyPath')]",
+                  "keyData": "[parameters('sshPublicKey')]"
+                }
+              ]
+            }
+          }
+        },
+        "availabilitySet": {
+          "id": "[resourceId('Microsoft.Compute/availabilitySets', parameters('availabilitySetName'))]"
         },
         "storageProfile": {
           "imageReference": {
@@ -310,7 +207,7 @@
           "osDisk": {
             "name": "osdisk",
             "vhd": {
-              "uri": "[concat(reference(resourceId('Microsoft.Storage/storageAccounts', uniqueString(concat('1',resourceGroup().id))), '2016-01-01').primaryEndpoints.blob, variables('vhdStorageContainerName'), '/', parameters('csrNamePrefix'),'1', '.vhd')]"
+              "uri": "[concat(reference(resourceId('Microsoft.Storage/storageAccounts', uniqueString(resourceGroup().id, deployment().name)), '2016-01-01').primaryEndpoints.blob, variables('vhdStorageContainerName'), '/', parameters('csrName'),'0', '.vhd')]"
             },
             "caching": "ReadWrite",
             "createOption": "FromImage"
@@ -319,11 +216,11 @@
         "networkProfile": {
           "networkInterfaces": [
             {
-              "id": "[resourceId('Microsoft.Network/networkInterfaces', concat(parameters('csrNamePrefix'), '1nic0'))]",
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', concat(parameters('csrName'), 'nic0'))]",
               "properties": { "primary": true }
             },
             {
-              "id": "[resourceId('Microsoft.Network/networkInterfaces', concat(parameters('csrNamePrefix'), '1nic1'))]",
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', concat(parameters('csrName'), 'nic1'))]",
               "properties": { "primary": false }
             }
           ]
@@ -332,17 +229,6 @@
       "resources": [
 
       ]
-    },
-      {
-        "name": "[concat(parameters('csrNamePrefix'), 'avset')]",
-        "type": "Microsoft.Compute/availabilitySets",
-        "location": "[resourceGroup().location]",
-        "apiVersion": "2015-06-15",
-        "dependsOn": [],
-        "properties": {
-          "platformUpdateDomainCount": 2,
-          "platformFaultDomainCount": 2
-        }
-      }
-      ]
     }
+  ]
+}

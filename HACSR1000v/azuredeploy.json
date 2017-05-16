@@ -21,7 +21,7 @@
       "defaultValue": "CSR",
       "maxLength": 15,
       "metadata": {
-        "Description": "This value will be utilized to name resources during deployment and will be the name of the CSR.  Must be 11 or less characters."
+        "Description": "This value will be utilized to name resources during deployment and will be the name of the CSR.  Must be 15 or less characters."
       }
     },
     "csrSize": {

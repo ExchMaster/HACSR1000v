@@ -27,6 +27,7 @@
   <ItemGroup>
     <Content Include="multiCSR.json" />
     <Content Include="azuredeploy.parameters.json" />
+    <None Include="depCSR.ps1" />
     <None Include="readme.md" />
     <None Include="azuredeploy.json" />
     <None Include="Deployment.targets">
